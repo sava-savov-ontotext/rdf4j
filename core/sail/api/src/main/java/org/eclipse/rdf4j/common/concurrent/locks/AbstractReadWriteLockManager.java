@@ -8,11 +8,12 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 
 /**
- * An abstract base implementation of a read/write lock manager.
+ * An abstract base implementation of a read/write-lock manager.
  *
  * @author Arjohn Kampman
  * @author James Leigh
@@ -20,14 +21,12 @@ import java.util.concurrent.locks.StampedLock;
  */
 public abstract class AbstractReadWriteLockManager implements ReadWriteLockManager {
 
-	/*
-	 * ----------- Variables -----------
-	 */
+	private final boolean trackLocks;
 
-	/**
-	 * Flag indicating whether a writer is active.
-	 */
+	// StampedLock for handling writers.
 	private final StampedLock lock = new StampedLock();
+
+	// LongAdder for handling readers. When the count is equal then there are no active readers.
 	private final LongAdder readersLocked = new LongAdder();
 	private final LongAdder readersUnlocked = new LongAdder();
 
@@ -59,7 +58,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 *                   add some overhead, but can be very useful for debugging.
 	 */
 	public AbstractReadWriteLockManager(boolean trackLocks) {
-		boolean trace = trackLocks || Properties.lockTrackingEnabled();
+		this.trackLocks = trackLocks || Properties.lockTrackingEnabled();
 	}
 
 	/*
@@ -89,7 +88,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 */
 	protected void waitForActiveWriter() throws InterruptedException {
 		while (lock.isWriteLocked()) {
-			Thread.yield();
+			Thread.onSpinWait();
 		}
 	}
 
@@ -100,7 +99,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 */
 	protected void waitForActiveReaders() throws InterruptedException {
 		while (isReaderActive()) {
-			Thread.yield();
+			Thread.onSpinWait();
 		}
 	}
 
@@ -108,86 +107,112 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 * Creates a new Lock for reading and increments counter for active readers. The lock is tracked if lock tracking is
 	 * enabled. This method is not thread safe itself, the calling method is expected to handle synchronization issues.
 	 *
-	 * @return a read lock.
+	 * @return a read-lock.
 	 */
 	protected Lock createReadLock() {
 		while (true) {
 			readersLocked.increment();
 			if (!lock.isWriteLocked()) {
-				// Acquired lock in read-only mode
+				// Everything is good! We have acquired a read-lock and there are no active writers.
 				break;
 			} else {
-				// Rollback logical counter to avoid blocking a Writer
+				// Release our read lock so we don't block any writers.
 				readersUnlocked.increment();
-				// If there is a Writer, wait until it is gone
-				while (lock.isWriteLocked()) {
-					Thread.yield();
+
+				try {
+					waitForActiveWriter();
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
 				}
 			}
 		}
 
-		return new Lock() {
-
-			boolean locked = true;
-
-			@Override
-			public boolean isActive() {
-				return locked;
-			}
-
-			@Override
-			public void release() {
-				if (isActive()) {
-					readersUnlocked.increment();
-					locked = false;
-				}
-			}
-		};
+		return new ReadLock(readersUnlocked);
 	}
 
 	/**
 	 * Creates a new Lock for writing. The lock is tracked if lock tracking is enabled. This method is not thread safe
 	 * itself for performance reasons, the calling method is expected to handle synchronization issues.
 	 *
-	 * @return a write lock.
+	 * @return a write-lock.
 	 */
 	protected Lock createWriteLock() {
 
+		// Acquire a write-lock.
 		long writeStamp = lock.writeLock();
-		int counter = 0;
+
+		int attempts = 0;
+
+		// Wait for active readers to finish.
 		while (true) {
+
+			// The order is important here.
 			long unlockedSum = readersUnlocked.sum();
 			long lockedSum = readersLocked.sum();
 			if (unlockedSum == lockedSum) {
+				// No active readers.
 				break;
 			}
-			if (READ_PREFERENCE > 0 && ++counter % READ_PREFERENCE == 0) {
+
+			// If a thread is allowed to acquire more than one read-lock then we could deadlock if we keep holding the
+			// write-lock while we wait for all readers to finish. This is because no read-locks can be acquired while
+			// the write-lock is locked.
+			if (READ_PREFERENCE > 0 && ++attempts % READ_PREFERENCE == 0) {
 				lock.unlockWrite(writeStamp);
 				Thread.yield();
 				writeStamp = lock.writeLock();
 			} else {
-				Thread.yield();
+				Thread.onSpinWait();
 			}
 		}
 
-		long finalWriteStamp = writeStamp;
+		return new WriteLock(lock, writeStamp);
+	}
 
-		return new Lock() {
+	static class WriteLock implements Lock {
 
-			long stamp = finalWriteStamp;
+		private final StampedLock lock;
+		private long stamp;
 
-			@Override
-			public boolean isActive() {
-				return stamp != 0;
+		public WriteLock(StampedLock lock, long stamp) {
+			this.lock = lock;
+			this.stamp = stamp;
+		}
+
+		@Override
+		public boolean isActive() {
+			return stamp != 0;
+		}
+
+		@Override
+		public void release() {
+			if (isActive()) {
+				lock.unlockWrite(stamp);
+				stamp = 0;
 			}
+		}
+	}
 
-			@Override
-			public void release() {
-				if (isActive()) {
-					lock.unlockWrite(stamp);
-					stamp = 0;
-				}
+	static class ReadLock implements Lock {
+
+		private final LongAdder readersUnlocked;
+		private boolean locked = true;
+
+		public ReadLock(LongAdder readersUnlocked) {
+			this.readersUnlocked = readersUnlocked;
+		}
+
+		@Override
+		public boolean isActive() {
+			return locked;
+		}
+
+		@Override
+		public void release() {
+			if (isActive()) {
+				readersUnlocked.increment();
+				locked = false;
 			}
-		};
+		}
 	}
 }

@@ -46,6 +46,15 @@ public class ReadWriteLockManagerBenchmark extends BaseLockManagerBenchmark {
 
 	}
 
+//	public static void main(String[] args) throws Exception {
+//		ReadWriteLockManagerBenchmark readWriteLockManagerBenchmark = new ReadWriteLockManagerBenchmark();
+//		readWriteLockManagerBenchmark.setUp();
+//
+//		while (true){
+//			readWriteLockManagerBenchmark.onlyReadLocksNoContention();
+//		}
+//	}
+
 	@Benchmark
 	public void onlyWriteLocks() throws Exception {
 
