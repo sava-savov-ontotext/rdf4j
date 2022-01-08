@@ -6,11 +6,11 @@
  *  http://www.eclipse.org/org/documents/edl-v10.php.
  ******************************************************************************/
 
-package org.eclipse.rdf4j.sail.memory.model;
+package org.eclipse.rdf4j.common.iterator;
 
 import java.util.Iterator;
 
-public interface CloseableIterator<E> extends Iterator<E>, AutoCloseable {
+public interface AutoCloseableIteratorWithoutExceptions<E> extends Iterator<E>, AutoCloseable {
 
 	@Override
 	void close();

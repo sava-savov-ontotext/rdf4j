@@ -17,6 +17,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.iterator.AutoCloseableIteratorWithoutExceptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +112,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		return i % objectMap.length;
 	}
 
-	public CloseableIterator<E> closeableIterator() {
+	public AutoCloseableIteratorWithoutExceptions<E> closeableIterator() {
 		return new WeakObjectRegistryIterator<>(objectMap, locks);
 	}
 
@@ -121,7 +122,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		return new WeakObjectRegistryIterator<E>(objectMap, null);
 	}
 
-	private static class WeakObjectRegistryIterator<E> implements CloseableIterator<E> {
+	private static class WeakObjectRegistryIterator<E> implements AutoCloseableIteratorWithoutExceptions<E> {
 
 		private final Iterator<Map<E, WeakReference<E>>> iterator;
 		private final StampedLock[] locks;

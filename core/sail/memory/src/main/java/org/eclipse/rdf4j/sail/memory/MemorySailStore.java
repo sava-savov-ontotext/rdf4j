@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iterator.AutoCloseableIteratorWithoutExceptions;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -40,7 +41,6 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
-import org.eclipse.rdf4j.sail.memory.model.CloseableIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -785,7 +785,8 @@ class MemorySailStore implements SailStore {
 			Lock stLock = openStatementsReadLock();
 			try {
 				int snapshot = getCurrentSnapshot();
-				try (CloseableIterator<MemIRI> memIRIsIterator = valueFactory.getMemIRIsIterator()) {
+				try (AutoCloseableIteratorWithoutExceptions<MemIRI> memIRIsIterator = valueFactory
+						.getMemIRIsIterator()) {
 					while (memIRIsIterator.hasNext()) {
 						MemResource memResource = memIRIsIterator.next();
 						if (isContextResource(memResource, snapshot)) {
@@ -794,7 +795,8 @@ class MemorySailStore implements SailStore {
 					}
 				}
 
-				try (CloseableIterator<MemBNode> memBNodesIterator = valueFactory.getMemBNodesIterator()) {
+				try (AutoCloseableIteratorWithoutExceptions<MemBNode> memBNodesIterator = valueFactory
+						.getMemBNodesIterator()) {
 					while (memBNodesIterator.hasNext()) {
 						MemResource memResource = memBNodesIterator.next();
 						if (isContextResource(memResource, snapshot)) {
